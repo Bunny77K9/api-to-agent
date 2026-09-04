@@ -1,0 +1,23 @@
+# Never commit these — the demo reads all keys from environment variables
+.env
+.env.*
+*.key
+secrets.json
+
+# Node
+node_modules/
+npm-debug.log*
+package-lock.json
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Azure / deployment
+.azure/
+*.publishsettings

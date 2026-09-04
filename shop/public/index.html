@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Shop · API Playground</title>
+<style>
+  :root{
+    --ink:#14121C; --surface:#211D2E; --surface2:#2C2740; --deep:#0E0C14;
+    --text:#F0EDF7; --muted:#9A93B0;
+    --violet:#7C5CFF; --cyan:#2DD4BF; --amber:#FFB454; --coral:#FF6B6B;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    background:var(--ink);color:var(--text);padding:22px}
+  .wrap{max-width:1120px;margin:0 auto}
+  header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:20px}
+  h1{font-size:23px;letter-spacing:.14em;font-weight:800}
+  .tag{font-size:11px;letter-spacing:.14em;color:var(--muted);font-weight:700}
+  .grid{display:grid;grid-template-columns:320px 1fr;gap:16px}
+  @media(max-width:860px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--surface);border-radius:16px;padding:16px;border:1px solid #322C46}
+  h2{font-size:10.5px;letter-spacing:.16em;color:var(--muted);font-weight:800;margin-bottom:12px}
+  .op{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 12px;
+    border:0;border-radius:11px;background:var(--surface2);color:var(--text);cursor:pointer;
+    font-size:13px;font-weight:600;margin-bottom:7px;font-family:inherit;transition:.12s}
+  .op:hover{background:#3A3356;transform:translateX(2px)}
+  .verb{font:800 10px/1 ui-monospace,"Courier New",monospace;padding:5px 7px;border-radius:6px;
+    color:var(--deep);min-width:50px;text-align:center}
+  .GET{background:var(--cyan)} .POST{background:var(--amber)} .DEL{background:var(--coral)}
+  input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #3A3356;
+    background:var(--deep);color:var(--text);font-size:13.5px;outline:none;margin-bottom:8px}
+  input:focus{border-color:var(--violet)}
+  pre{background:var(--deep);border-radius:12px;padding:14px;overflow:auto;border:1px solid #322C46;
+    font:12.5px/1.65 ui-monospace,"Courier New",monospace;white-space:pre-wrap;word-break:break-word;max-height:34vh}
+  .status{display:flex;align-items:center;gap:13px;margin-bottom:12px;flex-wrap:wrap}
+  .code{font:800 30px/1 ui-monospace,"Courier New",monospace;padding:10px 15px;border-radius:11px;color:var(--deep)}
+  .c2{background:var(--cyan)} .c4{background:var(--amber)} .c5{background:var(--coral)}
+  .meaning{font-size:12.5px;color:var(--muted)}
+  .time{margin-left:auto;font:700 13px ui-monospace,monospace;color:var(--violet)}
+  .lbl{font-size:10px;letter-spacing:.15em;color:var(--muted);font-weight:800;margin:14px 0 6px}
+  .note{margin-top:14px;font-size:12px;color:var(--muted);line-height:1.5;
+    border-left:2px solid var(--violet);padding-left:11px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>THE SHOP</h1>
+    <span class="tag">ORDINARY REST API · NOTHING AI ABOUT IT</span>
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <h2>NORMAL OPERATIONS</h2>
+      <button class="op" onclick="go('GET','/api/products')"><span class="verb GET">GET</span> /api/products</button>
+      <input id="q" placeholder="search term" value="tee">
+      <button class="op" onclick="go('GET','/api/products?search='+encodeURIComponent(q.value))"><span class="verb GET">GET</span> /api/products?search=</button>
+      <input id="oid" placeholder="order id" value="1042">
+      <button class="op" onclick="go('GET','/api/orders/'+oid.value)"><span class="verb GET">GET</span> /api/orders/:id</button>
+      <button class="op" onclick="go('GET','/api/customers/nandun@example.lk/orders')"><span class="verb GET">GET</span> /api/customers/:email/orders</button>
+      <button class="op" onclick="go('GET','/api/stock?productId=P-101&color=blue&size=M')"><span class="verb GET">GET</span> /api/stock?...</button>
+      <button class="op" onclick="order()"><span class="verb POST">POST</span> /api/orders</button>
+
+      <h2 style="margin-top:20px">BREAK IT ON PURPOSE</h2>
+      <button class="op" onclick="go('POST','/api/orders',{})"><span class="verb POST">POST</span> with no data → 400</button>
+      <button class="op" onclick="go('GET','/api/orders/9999')"><span class="verb GET">GET</span> an order that isn't there → 404</button>
+      <button class="op" onclick="go('GET','/api/admin')"><span class="verb GET">GET</span> /api/admin, no token → 401</button>
+      <button class="op" onclick="go('GET','/api/admin',null,{Authorization:'Bearer ascend-2026'})"><span class="verb GET">GET</span> /api/admin, with token → 200</button>
+      <button class="op" onclick="go('GET','/api/boom')"><span class="verb GET">GET</span> /api/boom → 500</button>
+
+      <div class="note">Every click prints one line in the terminal running this server. Keep an eye on it — later, an AI will produce the exact same lines.</div>
+    </div>
+
+    <div class="card">
+      <h2>WHAT CAME BACK</h2>
+      <div class="status">
+        <div class="code c2" id="code">—</div>
+        <div>
+          <div style="font-weight:800" id="url">click an operation</div>
+          <div class="meaning" id="meaning"></div>
+        </div>
+        <div class="time" id="time"></div>
+      </div>
+      <div class="lbl">THE REQUEST WE SENT</div>
+      <pre id="req">—</pre>
+      <div class="lbl">THE RESPONSE BODY</div>
+      <pre id="res">—</pre>
+    </div>
+  </div>
+</div>
+
+<script>
+const MEAN={200:'OK — here is what you asked for',201:'Created — I stored it',204:'No Content — done, nothing to say',
+ 400:'Bad Request — YOUR message was malformed',401:'Unauthorized — I do not know who you are',
+ 403:'Forbidden — I know who you are, and no',404:'Not Found — nothing lives at that address',
+ 409:'Conflict — it exists, but not like that',429:'Too Many Requests — slow down',
+ 500:'Internal Server Error — MY fault, not yours'};
+const $=id=>document.getElementById(id);
+
+async function go(method,p,body,headers){
+  const t0=performance.now();
+  const opts={method,headers:Object.assign({},headers)};
+  if(body!==undefined&&body!==null){opts.body=JSON.stringify(body);opts.headers['Content-Type']='application/json';}
+  $('req').textContent=`${method} ${p} HTTP/1.1\nHost: ${location.host}\n`
+    +Object.entries(opts.headers).map(([k,v])=>`${k}: ${v}`).join('\n')
+    +(opts.body?`\n\n${JSON.stringify(body,null,2)}`:'');
+  try{
+    const r=await fetch(p,opts), ms=Math.round(performance.now()-t0), txt=await r.text();
+    const el=$('code'); el.textContent=r.status; el.className='code c'+String(r.status)[0];
+    $('url').textContent=method+' '+p;
+    $('meaning').textContent=MEAN[r.status]||'';
+    $('time').textContent=ms+' ms';
+    $('res').textContent=txt?(()=>{try{return JSON.stringify(JSON.parse(txt),null,2)}catch{return txt}})():'(empty body)';
+  }catch(e){ $('res').textContent='Network error: '+e.message; }
+}
+const order=()=>go('POST','/api/orders',{customerEmail:'nandun@example.lk',productId:'P-101',color:'blue',size:'M'});
+</script>
+</body>
+</html>

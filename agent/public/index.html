@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Shop Assistant · Agent</title>
+<style>
+  :root{
+    --ink:#14121C; --surface:#211D2E; --surface2:#2C2740; --deep:#0E0C14;
+    --text:#F0EDF7; --muted:#9A93B0;
+    --violet:#7C5CFF; --cyan:#2DD4BF; --amber:#FFB454; --coral:#FF6B6B;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    background:var(--ink);color:var(--text);min-height:100vh;display:flex;
+    flex-direction:column;align-items:center;padding:18px}
+  .wrap{width:100%;max-width:840px;display:flex;flex-direction:column;gap:13px;flex:1}
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  h1{font-size:21px;letter-spacing:.13em;font-weight:800}
+  h1 small{display:block;font-size:10px;letter-spacing:.15em;color:var(--muted);font-weight:700;margin-top:4px}
+  .pills{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .pill{display:flex;align-items:center;gap:7px;background:var(--surface);border:1px solid #322C46;
+    border-radius:999px;padding:6px 13px;font-size:12px;font-weight:600}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--amber)}
+  .dot.on{background:var(--cyan);box-shadow:0 0 0 0 rgba(45,212,191,.6);animation:pulse 2.2s infinite}
+  @keyframes pulse{70%{box-shadow:0 0 0 8px rgba(45,212,191,0)}100%{box-shadow:0 0 0 0 rgba(45,212,191,0)}}
+  select{background:var(--surface);color:var(--text);border:1px solid #322C46;border-radius:999px;
+    padding:6px 11px;font-size:12px;font-weight:600;outline:none;font-family:inherit}
+
+  #log{flex:1;min-height:330px;max-height:52vh;overflow-y:auto;background:var(--surface);
+    border:1px solid #322C46;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:11px}
+  .row{display:flex;gap:10px;align-items:flex-start;animation:in .18s ease-out}
+  @keyframes in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+  .av{width:30px;height:30px;border-radius:9px;flex:none;display:grid;place-items:center;
+    font-weight:800;font-size:12px;color:var(--deep)}
+  .me .av{background:var(--amber)} .bot .av{background:var(--violet);color:#fff}
+  .bubble{background:var(--surface2);padding:9px 13px;border-radius:13px;border-top-left-radius:4px;
+    word-break:break-word;white-space:pre-wrap;max-width:640px}
+  .me .bubble{background:#3A3356}
+
+  .tool{margin-left:40px;background:var(--deep);border:1px solid #322C46;border-left:3px solid var(--cyan);
+    border-radius:10px;padding:9px 12px;font:12px/1.5 ui-monospace,"Courier New",monospace;
+    animation:in .18s ease-out;max-width:660px}
+  .tool .n{color:var(--cyan);font-weight:700}
+  .tool .a{color:var(--muted)}
+  .tool .r{display:block;margin-top:6px;padding-top:6px;border-top:1px dashed #322C46;
+    color:var(--text);white-space:pre-wrap;font-size:11.5px}
+  .tool.refused{border-left-color:var(--coral)} .tool.refused .n{color:var(--coral)}
+  .think{margin-left:40px;font-size:12px;color:var(--muted);font-style:italic}
+
+  .quick{display:flex;gap:7px;flex-wrap:wrap}
+  .quick button{background:var(--surface);border:1px solid #322C46;color:var(--muted);border-radius:999px;
+    padding:7px 13px;font-size:12px;cursor:pointer;font-family:inherit;transition:.12s}
+  .quick button:hover{border-color:var(--violet);color:var(--text)}
+  form{display:flex;gap:9px}
+  input[type=text]{flex:1;padding:13px 15px;border-radius:13px;border:1px solid #3A3356;
+    background:var(--surface);color:var(--text);font-size:15px;outline:none}
+  input[type=text]:focus{border-color:var(--violet)}
+  button.send{padding:13px 22px;border:0;border-radius:13px;background:var(--violet);color:#fff;
+    font-weight:800;font-size:15px;cursor:pointer;font-family:inherit}
+  button.send:disabled{opacity:.45;cursor:not-allowed}
+  footer{font-size:10.5px;color:var(--muted);text-align:center;letter-spacing:.06em}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>SHOP ASSISTANT<small>AGENT · MCP · TOOLS</small></h1>
+    <div class="pills">
+      <div class="pill"><span class="dot" id="dot"></span><span id="state">connecting</span></div>
+      <div class="pill" id="brain">brain: —</div>
+      <select id="who">
+        <option value="nandun@example.lk">signed in as Nandun</option>
+        <option value="ama@example.lk">signed in as Ama</option>
+      </select>
+    </div>
+  </header>
+
+  <div id="log"></div>
+
+  <div class="quick">
+    <button onclick="q('Where is my order 1042?')">where is my order 1042?</button>
+    <button onclick="q('Do you have the tee in blue, size M?')">tee in blue, size M?</button>
+    <button onclick="q('Reorder what I bought last month, but in blue')">reorder last month's, in blue</button>
+    <button onclick="q('Where is order 1041?')">where is order 1041?</button>
+  </div>
+
+  <form id="f">
+    <input type="text" id="t" placeholder="Ask about an order, stock, anything…" autocomplete="off">
+    <button class="send" id="send" type="submit">Send</button>
+  </form>
+
+  <footer>EVERY TOOL CALL BELOW BECOMES AN ORDINARY HTTP REQUEST TO THE SHOP</footer>
+</div>
+
+<script>
+const $=id=>document.getElementById(id), log=$('log');
+let ws, bubble=null, busy=false;
+const esc=s=>String(s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+
+function add(html,cls){const d=document.createElement('div');d.className=cls;d.innerHTML=html;
+  log.appendChild(d);log.scrollTop=log.scrollHeight;return d;}
+
+function connect(){
+  ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws');
+  ws.onopen=()=>{$('dot').classList.add('on');$('state').textContent='connected';};
+  ws.onclose=()=>{$('dot').classList.remove('on');$('state').textContent='reconnecting';setTimeout(connect,1500);};
+  ws.onmessage=e=>{
+    const m=JSON.parse(e.data);
+    if(m.type==='ready'){$('brain').textContent='brain: '+m.mode;}
+    if(m.type==='thinking'){add('deciding which tool to use…','think');}
+    if(m.type==='tool'){
+      add(`<span class="n">${esc(m.name)}</span><span class="a">(${esc(JSON.stringify(m.args))})</span>`,'tool');
+    }
+    if(m.type==='tool_result'){
+      const last=log.querySelector('.tool:last-of-type');
+      if(last){const s=document.createElement('span');s.className='r';s.textContent=m.text;last.appendChild(s);
+        if(/^Refused/.test(m.text))last.classList.add('refused');}
+      log.scrollTop=log.scrollHeight;
+    }
+    if(m.type==='token'){
+      if(!bubble){bubble=add('<div class="av">AI</div><div class="bubble"></div>','row bot').querySelector('.bubble');}
+      bubble.textContent+=m.t; log.scrollTop=log.scrollHeight;
+    }
+    if(m.type==='done'){bubble=null;busy=false;$('send').disabled=false;$('t').focus();}
+  };
+}
+
+function q(text){$('t').value=text;$('f').requestSubmit();}
+
+$('f').onsubmit=e=>{
+  e.preventDefault();
+  const text=$('t').value.trim();
+  if(!text||busy||!ws||ws.readyState!==1)return;
+  busy=true;$('send').disabled=true;
+  add(`<div class="av">${$('who').value[0].toUpperCase()}</div><div class="bubble">${esc(text)}</div>`,'row me');
+  ws.send(JSON.stringify({text,email:$('who').value}));
+  $('t').value='';
+};
+
+connect();
+</script>
+</body>
+</html>
