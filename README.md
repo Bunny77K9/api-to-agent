@@ -59,7 +59,17 @@ key, no quota, no network, nothing to go wrong live.
 To use a real model, set environment variables before starting the agent. It speaks the
 OpenAI-compatible chat-completions format, so most providers work without code changes.
 
-**Azure OpenAI / Microsoft Foundry:**
+**Azure OpenAI / Microsoft Foundry** — PowerShell on Windows:
+
+```powershell
+$env:AZURE_OPENAI_ENDPOINT = "https://your-resource.openai.azure.com"
+$env:AZURE_OPENAI_KEY = "xxxxx"
+$env:AZURE_OPENAI_DEPLOYMENT = "your-deployment-name"
+$env:AZURE_OPENAI_API_VERSION = "2024-12-01-preview"
+node agent/server.js
+```
+
+The same thing in bash — macOS, Linux, WSL or Git Bash:
 
 ```bash
 export AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
@@ -68,6 +78,10 @@ export AZURE_OPENAI_DEPLOYMENT=your-deployment-name
 export AZURE_OPENAI_API_VERSION=2024-12-01-preview
 node agent/server.js
 ```
+
+Variables live only in the terminal window you set them in, so **set them in the same
+window you run the agent from**. Only the agent needs them — the shop and the MCP server
+need nothing.
 
 `AZURE_OPENAI_DEPLOYMENT` is the name **you** gave the deployment in the portal, which is
 often but not always the same as the model name. Getting this wrong gives you a 404.
@@ -84,11 +98,39 @@ It never prints your key.
 
 **Anything else OpenAI-compatible** — OpenAI, OpenRouter, Groq, or a local server:
 
+```powershell
+$env:OPENAI_BASE_URL = "https://api.openai.com/v1"
+$env:OPENAI_API_KEY = "xxxxx"
+$env:OPENAI_MODEL = "gpt-4o-mini"
+node agent/server.js
+```
+
 ```bash
 export OPENAI_BASE_URL=https://api.openai.com/v1
 export OPENAI_API_KEY=xxxxx
 export OPENAI_MODEL=gpt-4o-mini
 node agent/server.js
+```
+
+### Going back to the offline planner
+
+```powershell
+Remove-Item Env:\AZURE_OPENAI_KEY          # PowerShell
+```
+```bash
+unset AZURE_OPENAI_KEY OPENAI_API_KEY      # bash
+```
+
+Restart the agent and check the banner says `offline planner`. Do this rather than
+debugging a provider live.
+
+### Checking what is actually set
+
+```powershell
+Get-ChildItem Env: | Where-Object Name -like "*OPENAI*"    # PowerShell
+```
+```bash
+env | grep -i openai                                        # bash
 ```
 
 **Never put a key in the code**, and never show your shell history on a shared screen.
@@ -137,8 +179,43 @@ pairing is the whole lesson.
 Three terminals. Type in one client, it appears in the other. Ctrl+C one and watch the
 server notice instantly.
 
-**Paste four lines at once.** The log prints `(43 bytes in that chunk)` — four messages
-arriving as one chunk. That's the framing lesson: TCP delivers *bytes*, not *messages*.
+The server logs **one entry per chunk**, with the messages found inside it listed
+underneath. That layout is the whole lesson — it makes chunk and message visibly different
+things.
+
+**Many messages in one chunk.** Send four lines in a single write:
+
+```bash
+node -e "require('net').createConnection({port:4000},function(){this.write('this is one\nthis is two\nthis is three\nfour\n')}).on('data',d=>process.stdout.write(String(d)))"
+```
+
+```
+  [chunk] 43 bytes arrived in ONE data event
+          -> this is one
+          -> this is two
+          -> this is three
+          -> four
+          4 messages found inside that one chunk
+```
+
+**One message split across two chunks.** The opposite failure:
+
+```bash
+node -e "const s=require('net').createConnection({port:4000},()=>{s.write('hello wor');setTimeout(()=>s.write('ld\n'),1500)})"
+```
+
+```
+  [chunk] 9 bytes arrived in ONE data event
+          -> (no complete message yet)
+          0 messages. Holding 9 bytes until the rest arrives.
+
+  [chunk] 3 bytes arrived in ONE data event
+          -> hello world
+          1 message found inside it
+```
+
+Together those two show it from both sides: TCP delivers *bytes*, not *messages*, and
+splitting them into messages — framing — is your job.
 
 ### Demo 3 — the chatbot (`localhost:3200`)
 

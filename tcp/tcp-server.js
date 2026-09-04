@@ -42,20 +42,39 @@ const server = net.createServer((socket) => {
 
   socket.on('data', (chunk) => {
     buffer += chunk.toString('utf8');
+
+    // Collect whole lines out of whatever arrived.
+    const lines = [];
     let i;
     while ((i = buffer.indexOf('\n')) !== -1) {
       const line = buffer.slice(0, i).trim();
       buffer = buffer.slice(i + 1);
-      if (line) handleLine(socket, line, chunk.length);
+      if (line) lines.push(line);
     }
     if (buffer.length > 4096) buffer = '';   // never trust a client to send '\n'
+
+    // ONE log line per CHUNK, then the messages found inside it, indented.
+    // When four messages appear under a single chunk header, the point makes
+    // itself — no explanation needed.
+    console.log(`\n  [chunk] ${chunk.length} bytes arrived in ONE data event`);
+    lines.forEach((l) => console.log(`          -> ${l}`));
+    if (lines.length === 0) {
+      // The other half of the framing problem: a message SPLIT across chunks.
+      console.log(`          -> (no complete message yet)`);
+      console.log(`          0 messages. Holding ${Buffer.byteLength(buffer)} bytes until the rest arrives.\n`);
+    } else {
+      console.log(`          ${lines.length} message${lines.length > 1 ? 's' : ''} found inside ${lines.length > 1 ? 'that one chunk' : 'it'}` +
+                  (buffer.length ? `, and ${Buffer.byteLength(buffer)} leftover bytes held back` : '') + `\n`);
+    }
+
+    lines.forEach((line) => handleLine(socket, line));
   });
 
   socket.on('end', () => drop(socket));
   socket.on('error', () => drop(socket));   // clients DO vanish. Always handle this.
 });
 
-function handleLine(socket, text, bytes) {
+function handleLine(socket, text) {
     if (text === '/quit') return socket.end('  Goodbye.\n');
     if (text === '/who') {
       return socket.write(`  Online (${clients.size}): ${[...clients.values()].join(', ')}\n`);
@@ -67,7 +86,6 @@ function handleLine(socket, text, bytes) {
       return broadcast(`* ${old} is now ${next}\n`);
     }
 
-    console.log(`[>] ${clients.get(socket)}: ${text}   (${bytes} bytes in that chunk)`);
     broadcast(`${clients.get(socket)}: ${text}\n`, socket);
     socket.write(`you: ${text}\n`);
 }
