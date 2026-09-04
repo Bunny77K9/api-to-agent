@@ -54,44 +54,66 @@ The agent runs out of the box using a **built-in planner** instead of a language
 makes the same tool calls, in the same order, and the room sees identical behaviour. No
 key, no quota, no network, nothing to go wrong live.
 
-To use a real model, set environment variables before starting the agent.
+**The startup banner always tells you which brain it picked. Check it before you present.**
 
-**GitHub Models — free, no credit card:**
+To use a real model, set environment variables before starting the agent. It speaks the
+OpenAI-compatible chat-completions format, so most providers work without code changes.
 
-```bash
-export GITHUB_TOKEN=ghp_xxxxx
-export GITHUB_MODEL=openai/gpt-4o-mini   # optional; note the publisher prefix
-node agent/server.js
-```
-
-Two things to know. The token needs the **Models** permission — a token without it
-returns 401. And model IDs are publisher-prefixed now: `openai/gpt-4o-mini`, not
-`gpt-4o-mini`. This uses `https://models.github.ai/inference`; the old
-`models.inference.ai.azure.com` endpoint was deprecated in July 2025 and no longer
-resolves.
-
-> **If you are in a Codespace or have the `gh` CLI signed in, `GITHUB_TOKEN` may already
-> be set without you realising.** The agent will then try to use it. Run `unset
-> GITHUB_TOKEN` before starting the agent if you want the offline planner. The startup
-> banner always tells you which brain it picked — check it.
-
-**Azure OpenAI:**
+**Azure OpenAI / Microsoft Foundry:**
 
 ```bash
 export AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
 export AZURE_OPENAI_KEY=xxxxx
-export AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
+export AZURE_OPENAI_DEPLOYMENT=your-deployment-name
+export AZURE_OPENAI_API_VERSION=2024-12-01-preview
 node agent/server.js
 ```
 
-The agent prints which brain it's using on startup. **Never put a key in the code**, and
-never show your shell history on a shared screen.
+`AZURE_OPENAI_DEPLOYMENT` is the name **you** gave the deployment in the portal, which is
+often but not always the same as the model name. Getting this wrong gives you a 404.
 
-> The offline planner is fully tested. The live-model path uses the standard
-> chat-completions tool-calling format — test it yourself before the session. If the key
-> doesn't work, unset it and everything still runs.
+**Test it before you present:**
 
----
+```bash
+node agent/test-model.js
+```
+
+That checks the endpoint, the key, and — importantly — whether the deployment actually
+supports **tool calling**, which the agent requires. Each failure tells you what to change.
+It never prints your key.
+
+**Anything else OpenAI-compatible** — OpenAI, OpenRouter, Groq, or a local server:
+
+```bash
+export OPENAI_BASE_URL=https://api.openai.com/v1
+export OPENAI_API_KEY=xxxxx
+export OPENAI_MODEL=gpt-4o-mini
+node agent/server.js
+```
+
+**Never put a key in the code**, and never show your shell history on a shared screen.
+
+### If a model rejects the request
+
+Newer models are fussier about parameters than older ones.
+
+| Error mentions | Fix |
+|---|---|
+| `temperature` | Run `unset AGENT_TEMPERATURE`. The gpt-5 and o-series models only accept their default, so this demo does not send one unless you ask. |
+| `max_tokens` | That model wants `max_completion_tokens`. This demo sends neither. |
+| 404 | Deployment name or api-version is wrong. |
+| 401 | Key is wrong, or belongs to a different resource. |
+| 429 | Rate limited. Use the offline planner for the session. |
+
+The agent turns each of these into a readable hint rather than raw JSON.
+
+> **A note on why this is configurable rather than hardcoded.** The first version of this
+> demo used GitHub Models, which was free and needed no credit card. GitHub retired it
+> entirely on 30 July 2026, about two years after launch. That is a useful lesson in
+> itself: the model layer is the most disposable part of an AI application, so keep it
+> behind configuration and never build your architecture around one provider. Everything
+> else in this repo — the API, the MCP server, the agent loop — was completely unaffected
+> by that shutdown.
 
 ## The demos, in order
 

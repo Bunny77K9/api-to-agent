@@ -31,20 +31,37 @@ const crypto = require('crypto');
 const PORT = process.env.AGENT_PORT || 3200;
 const MCP_URL = process.env.MCP_URL || 'http://localhost:3100/mcp';
 
-/* ---- Which brain? ------------------------------------------------- */
-const AZURE_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT;       // https://xxx.openai.azure.com
+/* ---- Which brain? ---------------------------------------------------
+ *
+ * Providers come and go — GitHub Models launched and was retired inside two
+ * years. So this does not hardcode one. It speaks the OpenAI-compatible
+ * chat-completions shape, which almost every provider now offers, and picks
+ * whichever credentials it finds.
+ *
+ *   Azure OpenAI / Microsoft Foundry:
+ *     AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
+ *     AZURE_OPENAI_KEY=...
+ *     AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
+ *
+ *   Anything OpenAI-compatible (OpenAI, OpenRouter, Groq, a local server):
+ *     OPENAI_BASE_URL=https://api.openai.com/v1
+ *     OPENAI_API_KEY=...
+ *     OPENAI_MODEL=gpt-4o-mini
+ *
+ *   Nothing set  ->  the offline planner. The demo works either way.
+ * ------------------------------------------------------------------- */
+
+const AZURE_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT;
 const AZURE_KEY      = process.env.AZURE_OPENAI_KEY;
 const AZURE_DEPLOY   = process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4o-mini';
-// Free via GitHub Models. The token needs the "Models" permission.
-// NOTE: only used if you deliberately set it. Codespaces and the gh CLI set
-// GITHUB_TOKEN automatically, which will switch this on without you asking —
-// unset it if you want the offline planner.
-const GITHUB_TOKEN   = process.env.GITHUB_TOKEN;
-const GITHUB_HOST    = 'models.github.ai';
-const GITHUB_PATH    = '/inference/chat/completions';
+const AZURE_VERSION  = process.env.AZURE_OPENAI_API_VERSION || '2024-10-21';
+
+const OAI_BASE       = process.env.OPENAI_BASE_URL;
+const OAI_KEY        = process.env.OPENAI_API_KEY;
+const OAI_MODEL      = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 const MODE = AZURE_ENDPOINT && AZURE_KEY ? 'azure'
-           : GITHUB_TOKEN ? 'github-models'
+           : OAI_BASE && OAI_KEY ? 'openai-compatible'
            : 'offline';
 
 const SYSTEM_PROMPT =
@@ -169,23 +186,35 @@ async function offlinePlan(text, email, emit) {
 
 function chatCompletion(messages, tools) {
   return new Promise((resolve, reject) => {
-    const payload = JSON.stringify({
-      messages, tools, tool_choice: 'auto', temperature: 0.2,
-      // GitHub Models needs a publisher-prefixed id, e.g. openai/gpt-4o-mini
-      ...(MODE === 'github-models' ? { model: process.env.GITHUB_MODEL || 'openai/gpt-4o-mini' } : {})
-    });
+    // Temperature is opt-in. The gpt-5 and o-series models reject any value
+    // other than their default and return a 400, so we simply do not send it
+    // unless you ask for it with AGENT_TEMPERATURE.
+    const body = { messages, tools, tool_choice: 'auto' };
+    if (process.env.AGENT_TEMPERATURE) body.temperature = Number(process.env.AGENT_TEMPERATURE);
+    if (MODE === 'openai-compatible') body.model = OAI_MODEL;
+    const payload = JSON.stringify(body);
 
     let opts;
     if (MODE === 'azure') {
       const u = new URL(AZURE_ENDPOINT);
-      opts = { hostname: u.hostname, path: `/openai/deployments/${AZURE_DEPLOY}/chat/completions?api-version=2024-10-21`,
-               method: 'POST', headers: { 'Content-Type': 'application/json', 'api-key': AZURE_KEY,
-                                          'Content-Length': Buffer.byteLength(payload) } };
+      opts = {
+        hostname: u.hostname,
+        port: u.port || 443,
+        path: `/openai/deployments/${AZURE_DEPLOY}/chat/completions?api-version=${AZURE_VERSION}`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'api-key': AZURE_KEY,
+                   'Content-Length': Buffer.byteLength(payload) }
+      };
     } else {
-      opts = { hostname: GITHUB_HOST, path: GITHUB_PATH, method: 'POST',
-               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GITHUB_TOKEN}`,
-                          Accept: 'application/vnd.github+json',
-                          'Content-Length': Buffer.byteLength(payload) } };
+      const u = new URL(OAI_BASE.replace(/\/$/, '') + '/chat/completions');
+      opts = {
+        hostname: u.hostname,
+        port: u.port || 443,
+        path: u.pathname,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OAI_KEY}`,
+                   'Content-Length': Buffer.byteLength(payload) }
+      };
     }
 
     const req = https.request(opts, (res) => {
@@ -194,9 +223,30 @@ function chatCompletion(messages, tools) {
       res.on('end', () => {
         try {
           const data = JSON.parse(raw);
-          if (data.error) return reject(new Error(data.error.message || raw.slice(0, 200)));
+          if (data.error) {
+            const m = data.error.message || raw.slice(0, 200);
+            if (/temperature/i.test(m)) {
+              return reject(new Error(`${m}  ->  unset AGENT_TEMPERATURE; this model only accepts its default.`));
+            }
+            if (/max_tokens/i.test(m)) {
+              return reject(new Error(`${m}  ->  this model wants max_completion_tokens, not max_tokens.`));
+            }
+            if (res.statusCode === 404) {
+              return reject(new Error(`${m}  ->  check AZURE_OPENAI_DEPLOYMENT matches the deployment name exactly, and that the api-version is right.`));
+            }
+            if (res.statusCode === 401) {
+              return reject(new Error(`${m}  ->  the key is wrong, or it belongs to a different resource.`));
+            }
+            if (res.statusCode === 429) {
+              return reject(new Error(`${m}  ->  rate limited. Wait, or switch to the offline planner for the demo.`));
+            }
+            return reject(new Error(m));
+          }
+          if (!data.choices) return reject(new Error(`Unexpected response (${res.statusCode}): ${raw.slice(0, 200)}`));
           resolve(data.choices[0].message);
-        } catch (e) { reject(new Error(`Bad response (${res.statusCode}): ${raw.slice(0, 200)}`)); }
+        } catch {
+          reject(new Error(`Bad response (${res.statusCode}): ${raw.slice(0, 200)}`));
+        }
       });
     });
     req.on('error', reject);
@@ -247,10 +297,10 @@ async function answer(text, email, emit) {
       : await modelLoop(text, email, emit);
   } catch (e) {
     console.log(`  !! model error: ${e.message}`);
-    const dns = /ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNREFUSED/.test(e.message);
-    reply = dns
-      ? `I could not reach the model (${e.message}). If you are demoing right now: stop this server, run "unset GITHUB_TOKEN" (or "unset AZURE_OPENAI_KEY"), and start it again — it will fall back to the offline planner and everything still works.`
-      : `Something went wrong reaching the model: ${e.message}`;
+    reply = `I could not reach the model. (${e.message})\n\n` +
+      'If you are demoing right now: stop this server, clear the model settings with ' +
+      '"unset AZURE_OPENAI_KEY OPENAI_API_KEY", and start it again. It falls back to the ' +
+      'offline planner and every demo still works.';
   }
 
   // Stream it out word by word. This is the entire reason this app needs a
@@ -349,11 +399,11 @@ server.listen(PORT, () => {
   console.log(`  http://localhost:${PORT}`);
   console.log(`  tools from  ${MCP_URL}`);
   console.log(`  brain:      ${MODE === 'offline'
-    ? 'offline planner (no API key found — demo still works)'
-    : MODE === 'azure' ? `Azure OpenAI, deployment "${AZURE_DEPLOY}"`
-    : `GitHub Models at ${GITHUB_HOST} (model ${process.env.GITHUB_MODEL || 'openai/gpt-4o-mini'})`}`);
+    ? 'offline planner (no API key set — every demo still works)'
+    : MODE === 'azure' ? `Azure OpenAI at ${new URL(AZURE_ENDPOINT).hostname}, deployment "${AZURE_DEPLOY}"`
+    : `${new URL(OAI_BASE).hostname}, model "${OAI_MODEL}"`}`);
   if (MODE !== 'offline') {
-    console.log(`  (unset the key and restart to use the offline planner)`);
+    console.log(`  (unset the key and restart for the offline planner)`);
   }
   console.log(`  ──────────────────────────────────────────\n`);
 });
