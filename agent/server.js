@@ -35,7 +35,13 @@ const MCP_URL = process.env.MCP_URL || 'http://localhost:3100/mcp';
 const AZURE_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT;       // https://xxx.openai.azure.com
 const AZURE_KEY      = process.env.AZURE_OPENAI_KEY;
 const AZURE_DEPLOY   = process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4o-mini';
-const GITHUB_TOKEN   = process.env.GITHUB_TOKEN;                // free via GitHub Models
+// Free via GitHub Models. The token needs the "Models" permission.
+// NOTE: only used if you deliberately set it. Codespaces and the gh CLI set
+// GITHUB_TOKEN automatically, which will switch this on without you asking —
+// unset it if you want the offline planner.
+const GITHUB_TOKEN   = process.env.GITHUB_TOKEN;
+const GITHUB_HOST    = 'models.github.ai';
+const GITHUB_PATH    = '/inference/chat/completions';
 
 const MODE = AZURE_ENDPOINT && AZURE_KEY ? 'azure'
            : GITHUB_TOKEN ? 'github-models'
@@ -165,7 +171,8 @@ function chatCompletion(messages, tools) {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify({
       messages, tools, tool_choice: 'auto', temperature: 0.2,
-      ...(MODE === 'github-models' ? { model: process.env.GITHUB_MODEL || 'gpt-4o-mini' } : {})
+      // GitHub Models needs a publisher-prefixed id, e.g. openai/gpt-4o-mini
+      ...(MODE === 'github-models' ? { model: process.env.GITHUB_MODEL || 'openai/gpt-4o-mini' } : {})
     });
 
     let opts;
@@ -175,8 +182,9 @@ function chatCompletion(messages, tools) {
                method: 'POST', headers: { 'Content-Type': 'application/json', 'api-key': AZURE_KEY,
                                           'Content-Length': Buffer.byteLength(payload) } };
     } else {
-      opts = { hostname: 'models.inference.ai.azure.com', path: '/chat/completions', method: 'POST',
+      opts = { hostname: GITHUB_HOST, path: GITHUB_PATH, method: 'POST',
                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GITHUB_TOKEN}`,
+                          Accept: 'application/vnd.github+json',
                           'Content-Length': Buffer.byteLength(payload) } };
     }
 
@@ -239,7 +247,10 @@ async function answer(text, email, emit) {
       : await modelLoop(text, email, emit);
   } catch (e) {
     console.log(`  !! model error: ${e.message}`);
-    reply = `Something went wrong reaching the model: ${e.message}`;
+    const dns = /ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNREFUSED/.test(e.message);
+    reply = dns
+      ? `I could not reach the model (${e.message}). If you are demoing right now: stop this server, run "unset GITHUB_TOKEN" (or "unset AZURE_OPENAI_KEY"), and start it again — it will fall back to the offline planner and everything still works.`
+      : `Something went wrong reaching the model: ${e.message}`;
   }
 
   // Stream it out word by word. This is the entire reason this app needs a
@@ -339,6 +350,10 @@ server.listen(PORT, () => {
   console.log(`  tools from  ${MCP_URL}`);
   console.log(`  brain:      ${MODE === 'offline'
     ? 'offline planner (no API key found — demo still works)'
-    : MODE === 'azure' ? `Azure OpenAI, deployment "${AZURE_DEPLOY}"` : 'GitHub Models'}`);
+    : MODE === 'azure' ? `Azure OpenAI, deployment "${AZURE_DEPLOY}"`
+    : `GitHub Models at ${GITHUB_HOST} (model ${process.env.GITHUB_MODEL || 'openai/gpt-4o-mini'})`}`);
+  if (MODE !== 'offline') {
+    console.log(`  (unset the key and restart to use the offline planner)`);
+  }
   console.log(`  ──────────────────────────────────────────\n`);
 });

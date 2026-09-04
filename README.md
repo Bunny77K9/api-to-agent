@@ -60,9 +60,20 @@ To use a real model, set environment variables before starting the agent.
 
 ```bash
 export GITHUB_TOKEN=ghp_xxxxx
-export GITHUB_MODEL=gpt-4o-mini      # optional
+export GITHUB_MODEL=openai/gpt-4o-mini   # optional; note the publisher prefix
 node agent/server.js
 ```
+
+Two things to know. The token needs the **Models** permission — a token without it
+returns 401. And model IDs are publisher-prefixed now: `openai/gpt-4o-mini`, not
+`gpt-4o-mini`. This uses `https://models.github.ai/inference`; the old
+`models.inference.ai.azure.com` endpoint was deprecated in July 2025 and no longer
+resolves.
+
+> **If you are in a Codespace or have the `gh` CLI signed in, `GITHUB_TOKEN` may already
+> be set without you realising.** The agent will then try to use it. Run `unset
+> GITHUB_TOKEN` before starting the agent if you want the offline planner. The startup
+> banner always tells you which brain it picked — check it.
 
 **Azure OpenAI:**
 
